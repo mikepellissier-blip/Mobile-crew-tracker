@@ -210,16 +210,33 @@ async function loadAll() {
 
   // JOBS SUMMARY — counts and rounds only
   const summaryEl = document.getElementById('jobs-summary');
+  // Cumulative footage and miles
+  const totalFt = {}, totalMiles = {};
+  Object.keys(CREW).forEach(n => { totalFt[n]=0; totalMiles[n]=0; });
+  jobs.forEach(j => (j.assignments||[]).forEach(a => {
+    if (totalFt[a.name] !== undefined) {
+      if (j.linfeet) totalFt[a.name] += j.linfeet;
+      if (j.downspouts) totalFt[a.name] += j.downspouts;
+      if (j.distance) totalMiles[a.name] += j.distance * 2;
+    }
+  }));
+
   if (summaryEl) {
     summaryEl.innerHTML = [...LEADS, ...HELPERS].map(name => {
       const role = CREW[name];
       const badge = `<span class="role-badge ${role}-badge">${role}</span>`;
       const rw = roundsWorked[name] || 0;
       const jc = counts[name] || 0;
+      const ft = totalFt[name] || 0;
+      const mi = totalMiles[name] || 0;
+      const isLead = role === 'lead';
+      const roundLine = isLead ? `<div class="stat-sub">${rw} round${rw!==1?'s':''} worked</div>` : '';
+      const workload = [ft ? ft.toLocaleString()+' ft' : null, mi ? mi+' mi RT' : null].filter(Boolean).join(' · ');
       return `<div class="stat-cell">
         <div class="stat-name">${name}${badge}</div>
         <div class="stat-amount">${jc} job${jc!==1?'s':''}</div>
-        <div class="stat-sub">${rw} round${rw!==1?'s':''} worked</div>
+        ${roundLine}
+        ${workload ? `<div class="stat-sub" style="margin-top:2px;">${workload}</div>` : ''}
       </div>`;
     }).join('');
   }
@@ -234,7 +251,9 @@ async function loadAll() {
       const cls = ra.action==='assign'?'action-assigned':'action-skip';
       const lbl = ra.action==='assign'?'Assigned':'Skipped';
       const job = ra.job_id ? jobs.find(j=>j.id===ra.job_id) : null;
-      const jd = job ? ` · ${job.jobname||'Job'} · $${job.gross.toLocaleString()}` : '';
+      // Find if another lead was on this same job
+      const partner = job && ra.action==='assign' ? ras.find(r => r.job_id===ra.job_id && r.name!==ra.name && r.action==='assign') : null;
+      const jd = job ? ` · ${job.jobname||'Job'}${partner ? ' (with '+partner.name+')' : ''}` : '';
       const rd = ra.reason ? ` · ${ra.reason}` : '';
       return `<div class="round-entry"><span class="entry-name">${ra.name}</span><div><span class="entry-action ${cls}">${lbl}</span><span class="entry-detail">${jd}${rd}</span></div></div>`;
     }).join('');
