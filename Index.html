@@ -196,9 +196,10 @@ input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1
     </div>
 
     <hr class="form-divider" />
-    <div class="card-title">Lead — assign from Rotation tab</div>
-    <div class="crew-slots" style="grid-template-columns:1fr;">
-      <div class="crew-slot"><div class="crew-slot-label">Lead</div><div class="crew-slot-name" id="lead-display">— go to Rotation tab to assign</div><div class="crew-slot-opp" id="lead-opp"></div><input type="hidden" id="lead-name" /><input type="hidden" id="lead-role" value="lead" /></div>
+    <div class="card-title">Lead(s) — assign from Rotation tab</div>
+    <div class="crew-slots" style="grid-template-columns:1fr 1fr;">
+      <div class="crew-slot"><div class="crew-slot-label">Lead 1</div><div class="crew-slot-name" id="lead-display">— assign from Rotation</div><div class="crew-slot-opp" id="lead-opp"></div><input type="hidden" id="lead-name" /><input type="hidden" id="lead-role" value="lead" /></div>
+      <div class="crew-slot"><div class="crew-slot-label">Lead 2 (optional)</div><div class="crew-slot-name" id="lead2-display">—</div><div class="crew-slot-opp" id="lead2-opp"></div><input type="hidden" id="lead2-name" /><input type="hidden" id="lead2-role" value="lead" /></div>
     </div>
 
     <div class="card-title">Helper(s) — select below</div>
@@ -338,6 +339,7 @@ let currentRound = 1;
 let roundActions = {}; // name -> 'assign' or 'skip' for current round
 let settings = {};
 let selectedLead = null;
+let selectedLead2 = null;
 let selectedHelpers = [];
 let editingId = null;
 let skipPending = null;
@@ -438,6 +440,39 @@ function commissionBase(gross) {
   return Math.max(0, gross - SETUP_FEE);
 }
 
+function getSplitAmounts(pool) {
+  // Returns array of {name, role, pct, opp}
+  const results = [];
+  const hasLead2 = !!selectedLead2;
+  const helperCount = selectedHelpers.length;
+
+  if (hasLead2 && helperCount === 0) {
+    // Two leads, no helper: 50/50
+    results.push({ name: selectedLead, role: 'lead', pct: 0.50, opp: Math.round(pool * 0.50) });
+    results.push({ name: selectedLead2, role: 'lead', pct: 0.50, opp: Math.round(pool * 0.50) });
+  } else if (hasLead2 && helperCount === 1) {
+    // Two leads + one helper: 40/40/20
+    results.push({ name: selectedLead, role: 'lead', pct: 0.40, opp: Math.round(pool * 0.40) });
+    results.push({ name: selectedLead2, role: 'lead', pct: 0.40, opp: Math.round(pool * 0.40) });
+    results.push({ name: selectedHelpers[0], role: 'helper', pct: 0.20, opp: Math.round(pool * 0.20) });
+  } else if (!hasLead2 && helperCount === 0) {
+    // Solo lead
+    results.push({ name: selectedLead, role: 'lead', pct: 1.0, opp: Math.round(pool) });
+  } else if (!hasLead2 && helperCount === 1) {
+    // Lead + one helper: helper split from settings, lead gets rest
+    const hPct = getHelperSplit(selectedHelpers[0]);
+    const lPct = 1.0 - hPct;
+    results.push({ name: selectedLead, role: 'lead', pct: lPct, opp: Math.round(pool * lPct) });
+    results.push({ name: selectedHelpers[0], role: 'helper', pct: hPct, opp: Math.round(pool * hPct) });
+  } else if (!hasLead2 && helperCount === 2) {
+    // Lead + two helpers: 50/25/25
+    results.push({ name: selectedLead, role: 'lead', pct: 0.50, opp: Math.round(pool * 0.50) });
+    results.push({ name: selectedHelpers[0], role: 'helper', pct: 0.25, opp: Math.round(pool * 0.25) });
+    results.push({ name: selectedHelpers[1], role: 'helper', pct: 0.25, opp: Math.round(pool * 0.25) });
+  }
+  return results;
+}
+
 function calcSplitPreview() {
   const gross = parseFloat(document.getElementById('gross').value) || 0;
   const isThreeMan = document.getElementById('is_three_man').value === '1';
@@ -446,19 +481,9 @@ function calcSplitPreview() {
   const pool = base * COMMISSION_RATE;
   if (!selectedLead) { preview.textContent = 'Assign lead from Rotation tab'; return; }
   if (isThreeMan) { preview.textContent = 'Three-man — enter amounts manually below'; return; }
-  if (selectedHelpers.length === 0) {
-    preview.textContent = gross ? selectedLead + ' solo — opp $' + Math.round(pool).toLocaleString() + ' (base $' + base.toLocaleString() + ' × 11%)' : 'Select helper or log as solo';
-    return;
-  }
-  const parts = [];
-  let leadPct = 1.0;
-  selectedHelpers.forEach(h => { leadPct -= getHelperSplit(h); });
-  parts.push(selectedLead + ' $' + Math.round(pool * leadPct).toLocaleString() + ' (' + Math.round(leadPct*100) + '%)');
-  selectedHelpers.forEach(h => {
-    const pct = getHelperSplit(h);
-    parts.push(h + ' $' + Math.round(pool * pct).toLocaleString() + ' (' + Math.round(pct*100) + '%)');
-  });
-  preview.textContent = 'Crew pool $' + Math.round(pool).toLocaleString() + '  →  ' + parts.join('  ·  ');
+  const splits = getSplitAmounts(pool);
+  const parts = splits.map(s => s.name + ' $' + s.opp.toLocaleString() + ' (' + Math.round(s.pct*100) + '%)');
+  preview.textContent = 'Pool $' + Math.round(pool).toLocaleString() + '  →  ' + parts.join('  ·  ');
 }
 
 function toggleThreeMan() {
@@ -517,22 +542,37 @@ function renderRotation() {
     const action = roundActions[name];
     let cls = 'queue-item' + (isNext && !action ? ' up-next' : action ? ' done' : '');
     let tag = action === 'assign' ? '<span class="done-tag">Assigned ✓</span>' : action === 'skip' ? '<span class="skip-tag">Skipped</span>' : isNext ? '<span class="next-tag">Next up</span>' : '';
-    const btns = (!action && !past) ? `<div class="queue-btns">
+    const alreadySelected = (name === selectedLead || name === selectedLead2);
+    const btns = (!action && !past && !alreadySelected) ? `<div class="queue-btns">
       <button class="q-btn assign" onclick="assignLead('${name}')">Assign</button>
       <button class="q-btn skip" onclick="initiateSkip('${name}')">Skip</button>
-    </div>` : '';
+    </div>` : alreadySelected ? '<span class="done-tag">Selected</span>' : '';
     return `<div class="${cls}"><span class="queue-pos">${i+1}</span><span class="queue-name">${name}</span>${tag}${btns}</div>`;
   }).join('');
 }
 
 async function assignLead(name) {
   if (isPastMonth()) return;
+  // Check if already assigned as lead 1 or lead 2
+  if (selectedLead === name || selectedLead2 === name) return;
   if (!leadSnapshot) leadSnapshot = [...leadQueue];
-  selectedLead = name;
-  document.getElementById('lead-display').textContent = name;
-  document.getElementById('lead-display').className = 'crew-slot-name filled';
-  document.getElementById('lead-name').value = name;
-  // Move to bottom
+
+  // Fill lead 1 first, then lead 2
+  if (!selectedLead) {
+    selectedLead = name;
+    document.getElementById('lead-display').textContent = name;
+    document.getElementById('lead-display').className = 'crew-slot-name filled';
+    document.getElementById('lead-name').value = name;
+  } else if (!selectedLead2) {
+    selectedLead2 = name;
+    document.getElementById('lead2-display').textContent = name;
+    document.getElementById('lead2-display').className = 'crew-slot-name filled';
+    document.getElementById('lead2-name').value = name;
+  } else {
+    return; // both slots filled
+  }
+
+  // Move to bottom of queue
   const idx = leadQueue.indexOf(name);
   if (idx !== -1) { leadQueue.splice(idx, 1); leadQueue.push(name); }
   await saveRotationState();
@@ -635,7 +675,7 @@ async function addJob() {
   const isThreeMan = document.getElementById('is_three_man').value === '1';
   if (!gross || gross <= 0) { showErr('Enter a gross sale amount'); return; }
   if (!date) { showErr('Select a date'); return; }
-  if (!selectedLead) { showErr('Assign a lead from the Rotation tab'); return; }
+  if (!selectedLead) { showErr('Assign at least one lead from the Rotation tab'); return; }
 
   let assignments = [];
   const base = commissionBase(gross);
@@ -643,18 +683,17 @@ async function addJob() {
   if (isThreeMan) {
     const leadOpp = parseFloat(document.getElementById('lead-manual').value) || 0;
     assignments.push({ name: selectedLead, role: 'lead', opp: leadOpp, split_pct: leadOpp/pool*100 });
+    if (selectedLead2) {
+      const lead2Opp = parseFloat(document.getElementById('lead2-manual') ? document.getElementById('lead2-manual').value : 0) || 0;
+      assignments.push({ name: selectedLead2, role: 'lead', opp: lead2Opp, split_pct: lead2Opp/pool*100 });
+    }
     selectedHelpers.forEach((h, i) => {
       const opp = parseFloat(document.getElementById('h' + (i+1) + '-manual').value) || 0;
       assignments.push({ name: h, role: 'helper', opp, split_pct: opp/pool*100 });
     });
   } else {
-    let leadPct = 1.0;
-    selectedHelpers.forEach(h => { leadPct -= getHelperSplit(h); });
-    assignments.push({ name: selectedLead, role: 'lead', opp: Math.round(pool * leadPct), split_pct: Math.round(leadPct*100) });
-    selectedHelpers.forEach(h => {
-      const pct = getHelperSplit(h);
-      assignments.push({ name: h, role: 'helper', opp: Math.round(pool * pct), split_pct: Math.round(pct*100) });
-    });
+    const splits = getSplitAmounts(pool);
+    splits.forEach(s => assignments.push({ name: s.name, role: s.role, opp: s.opp, split_pct: Math.round(s.pct*100) }));
   }
 
   const mk = date.slice(0, 7);
@@ -679,11 +718,14 @@ async function addJob() {
     const { data: newJob, error } = await db.from('jobs').insert(jobData).select().single();
     if (error) { showErr('Error: ' + error.message); return; }
     jobId = newJob.id;
-    // Update round assignment job_id for the lead
+    // Update round assignment job_id for lead(s)
     const mk2 = currentMK();
     const { data: rounds } = await db.from('rounds').select('*').eq('month_key', mk2).eq('role','lead').eq('round_number', currentRound - (Object.keys(roundActions).length === 0 ? 1 : 0));
     if (rounds && rounds.length > 0) {
       await db.from('round_assignments').update({ job_id: jobId }).eq('round_id', rounds[0].id).eq('name', selectedLead).is('job_id', null);
+      if (selectedLead2) {
+        await db.from('round_assignments').update({ job_id: jobId }).eq('round_id', rounds[0].id).eq('name', selectedLead2).is('job_id', null);
+      }
     }
   }
 
@@ -691,6 +733,7 @@ async function addJob() {
 
   editingId = null;
   selectedLead = null;
+  selectedLead2 = null;
   selectedHelpers = [];
   leadSnapshot = null;
   document.getElementById('btn-add').textContent = 'Add job';
@@ -709,12 +752,16 @@ function clearJobForm() {
   document.getElementById('jobdate').value = new Date().toISOString().slice(0,10);
   document.getElementById('actual_hours').value = '';
   document.getElementById('disc-pct').textContent = '';
-  document.getElementById('lead-display').textContent = '— go to Rotation tab to assign';
+  document.getElementById('lead-display').textContent = '— assign from Rotation';
   document.getElementById('lead-display').className = 'crew-slot-name';
   document.getElementById('lead-name').value = '';
+  document.getElementById('lead2-display').textContent = '—';
+  document.getElementById('lead2-display').className = 'crew-slot-name';
+  document.getElementById('lead2-name').value = '';
   document.getElementById('split-preview').textContent = 'Select lead and helper to see split';
   document.getElementById('form-error').style.display = 'none';
   selectedLead = null;
+  selectedLead2 = null;
   selectedHelpers = [];
   renderHelperSelector();
 }
@@ -749,7 +796,10 @@ function editJob(job) {
   const a = job.assignments || [];
   const lead = a.find(x => x.role === 'lead');
   const helpers = a.filter(x => x.role === 'helper');
-  if (lead) { selectedLead = lead.name; document.getElementById('lead-display').textContent = lead.name; document.getElementById('lead-display').className = 'crew-slot-name filled'; document.getElementById('lead-name').value = lead.name; }
+  const leads = a.filter(x => x.role === 'lead');
+  const lead1 = leads[0], lead2 = leads[1];
+  if (lead1) { selectedLead = lead1.name; document.getElementById('lead-display').textContent = lead1.name; document.getElementById('lead-display').className = 'crew-slot-name filled'; document.getElementById('lead-name').value = lead1.name; }
+  if (lead2) { selectedLead2 = lead2.name; document.getElementById('lead2-display').textContent = lead2.name; document.getElementById('lead2-display').className = 'crew-slot-name filled'; document.getElementById('lead2-name').value = lead2.name; }
   selectedHelpers = helpers.map(h => h.name);
   renderHelperSelector();
   calcSplitPreview();
