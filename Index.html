@@ -1,0 +1,934 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Mobile Crew Tracker — Manager</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #f5f5f3; --surface: #ffffff; --surface-alt: #f9f9f8;
+  --border: #e0dfd9; --border-strong: #c8c7c0;
+  --text: #1a1a18; --text-secondary: #5a5a56; --text-muted: #9a9a94;
+  --accent: #1d6fa4; --accent-bg: #e8f2f9; --accent-text: #155a85;
+  --success: #1a6b3a; --success-bg: #e8f5ee;
+  --warning: #92610a; --warning-bg: #fff8e1;
+  --danger: #c0392b; --danger-bg: #fdf0ee;
+  --radius: 8px;
+}
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); font-size: 15px; min-height: 100vh; }
+header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 0.75rem 1.25rem; display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 100; }
+header h1 { font-size: 16px; font-weight: 700; }
+.live-badge { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; color: var(--success); background: var(--success-bg); padding: 2px 8px; border-radius: 20px; }
+.live-dot { width: 6px; height: 6px; background: var(--success); border-radius: 50%; animation: pulse 1.8s infinite; }
+@keyframes pulse { 0%,100%{opacity:1}50%{opacity:0.3} }
+.btn { padding: 6px 14px; border-radius: var(--radius); border: 1px solid var(--border-strong); background: var(--surface); color: var(--text); font-size: 13px; cursor: pointer; }
+.btn-primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+.btn-sm { padding: 4px 10px; font-size: 12px; }
+nav { background: var(--surface); border-bottom: 1px solid var(--border); display: flex; overflow-x: auto; }
+nav button { padding: 10px 16px; border: none; background: none; font-size: 13px; color: var(--text-secondary); cursor: pointer; white-space: nowrap; border-bottom: 2px solid transparent; }
+nav button.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+main { max-width: 800px; margin: 0 auto; padding: 1rem; display: flex; flex-direction: column; gap: 14px; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 1rem 1.25rem; }
+.card-title { font-size: 11px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 12px; }
+.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px; }
+.field label { display: block; font-size: 12px; color: var(--text-muted); margin-bottom: 3px; }
+input[type="text"], input[type="number"], input[type="date"], select { width: 100%; font-size: 14px; padding: 7px 10px; border-radius: var(--radius); border: 1px solid var(--border-strong); background: var(--surface-alt); color: var(--text); }
+input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+.auto-field { background: var(--accent-bg) !important; }
+.form-divider { border: none; border-top: 1px solid var(--border); margin: 10px 0; }
+
+/* CREW SLOTS */
+.crew-slots { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 10px; }
+.crew-slot { background: var(--surface-alt); border: 1px solid var(--border); border-radius: var(--radius); padding: 8px 10px; }
+.crew-slot-label { font-size: 10px; color: var(--text-muted); margin-bottom: 3px; text-transform: uppercase; }
+.crew-slot-name { font-size: 14px; font-weight: 600; color: var(--text-secondary); }
+.crew-slot-name.filled { color: var(--accent-text); }
+.crew-slot-opp { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+.split-preview { font-size: 12px; color: var(--accent-text); background: var(--accent-bg); border-radius: var(--radius); padding: 6px 10px; margin-bottom: 10px; text-align: center; min-height: 28px; }
+
+/* HELPER SELECTOR */
+.helper-selector { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+.helper-btn { padding: 6px 14px; border-radius: var(--radius); border: 1px solid var(--border-strong); background: var(--surface-alt); color: var(--text); font-size: 13px; cursor: pointer; }
+.helper-btn.selected { background: var(--success-bg); border-color: var(--success); color: var(--success); font-weight: 600; }
+
+/* LEAD QUEUE */
+.queue-list { display: flex; flex-direction: column; gap: 5px; }
+.queue-item { display: flex; align-items: center; gap: 8px; background: var(--surface-alt); border: 1px solid var(--border); border-radius: var(--radius); padding: 7px 10px; }
+.queue-item.up-next { background: var(--accent-bg); border-color: #a8cfe8; }
+.queue-item.done { opacity: 0.6; }
+.queue-pos { font-size: 11px; font-weight: 700; color: var(--text-muted); min-width: 18px; }
+.queue-item.up-next .queue-pos { color: var(--accent); }
+.queue-name { flex: 1; font-size: 14px; font-weight: 500; }
+.queue-item.up-next .queue-name { color: var(--accent-text); font-weight: 600; }
+.next-tag { font-size: 9px; background: var(--accent); color: #fff; padding: 1px 6px; border-radius: 3px; font-weight: 600; }
+.done-tag { font-size: 9px; background: var(--success); color: #fff; padding: 1px 6px; border-radius: 3px; }
+.skip-tag { font-size: 9px; background: var(--warning); color: #fff; padding: 1px 6px; border-radius: 3px; }
+.queue-btns { display: flex; gap: 4px; }
+.q-btn { font-size: 11px; padding: 3px 8px; border-radius: 4px; border: 1px solid var(--border-strong); background: var(--surface); cursor: pointer; }
+.q-btn.assign { background: var(--accent); color: #fff; border-color: var(--accent); }
+.q-btn.skip { background: var(--warning-bg); color: var(--warning); border-color: #e0c980; }
+.round-info { font-size: 12px; color: var(--text-muted); margin-bottom: 8px; display: flex; justify-content: space-between; }
+.round-badge { font-size: 11px; background: var(--accent-bg); color: var(--accent-text); padding: 2px 8px; border-radius: 4px; font-weight: 600; }
+
+/* SKIP MODAL */
+.modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 200; align-items: center; justify-content: center; }
+.modal-overlay.open { display: flex; }
+.modal { background: var(--surface); border-radius: 12px; padding: 1.25rem; width: 340px; max-width: 90vw; }
+.modal h3 { font-size: 15px; font-weight: 600; margin-bottom: 12px; }
+.modal-btns { display: flex; gap: 8px; margin-top: 12px; }
+
+/* TOTALS */
+.totals-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.stat-cell { background: var(--surface-alt); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; }
+.stat-name { font-size: 12px; color: var(--text-secondary); margin-bottom: 3px; display: flex; align-items: center; gap: 5px; }
+.role-badge { font-size: 9px; padding: 1px 5px; border-radius: 3px; font-weight: 500; }
+.lead-badge { background: var(--accent-bg); color: var(--accent-text); }
+.helper-badge { background: var(--success-bg); color: var(--success); }
+.stat-amount { font-size: 18px; font-weight: 600; }
+.stat-sub { font-size: 10px; color: var(--text-muted); margin-top: 1px; }
+.stat-avg { font-size: 12px; color: var(--accent-text); font-weight: 500; margin-top: 2px; }
+
+/* ROUND LOG */
+.round-group { margin-bottom: 16px; }
+.round-header { font-size: 12px; font-weight: 700; color: var(--text-secondary); background: var(--surface-alt); border: 1px solid var(--border); border-radius: var(--radius); padding: 5px 10px; margin-bottom: 6px; display: flex; justify-content: space-between; }
+.round-entry { display: flex; align-items: flex-start; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+.round-entry:last-child { border-bottom: none; }
+.entry-name { font-weight: 600; min-width: 70px; }
+.entry-action { font-size: 10px; padding: 1px 6px; border-radius: 3px; font-weight: 600; margin-right: 4px; }
+.action-assigned { background: var(--success-bg); color: var(--success); }
+.action-skip { background: var(--warning-bg); color: var(--warning); }
+.entry-detail { font-size: 11px; color: var(--text-muted); }
+
+/* JOBS TABLE */
+.jobs-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.jobs-table th { text-align: left; font-size: 10px; color: var(--text-muted); font-weight: 600; padding: 0 6px 6px 0; border-bottom: 1px solid var(--border); }
+.jobs-table td { padding: 7px 6px 7px 0; border-bottom: 1px solid var(--border); vertical-align: top; }
+.jobs-table tr:last-child td { border-bottom: none; }
+.job-gross { color: var(--accent); font-weight: 600; white-space: nowrap; }
+.tbl-btn { background: none; border: none; cursor: pointer; font-size: 14px; padding: 0 3px; }
+
+/* SETTINGS */
+.settings-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.setting-item { display: flex; justify-content: space-between; align-items: center; padding: 8px 10px; background: var(--surface-alt); border: 1px solid var(--border); border-radius: var(--radius); }
+.setting-input { width: 70px; font-size: 13px; padding: 4px 6px; border-radius: 4px; border: 1px solid var(--border-strong); text-align: center; }
+.empty { text-align: center; padding: 2rem; color: var(--text-muted); font-size: 13px; }
+.month-nav { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+.month-label { font-size: 15px; font-weight: 600; }
+.error-msg { font-size: 12px; color: var(--danger); margin-bottom: 8px; display: none; }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>Mobile Crew Tracker</h1>
+    <div class="live-badge"><span class="live-dot"></span><span id="conn-status">Connecting...</span></div>
+  </div>
+  <div style="display:flex;gap:8px;">
+    <button class="btn btn-sm" onclick="window.print()">Print</button>
+  </div>
+</header>
+
+<nav>
+  <button class="active" onclick="showTab('log',this)">Log Job</button>
+  <button onclick="showTab('rotation',this)">Rotation</button>
+  <button onclick="showTab('totals',this)">Totals</button>
+  <button onclick="showTab('rounds',this)">Round Log</button>
+  <button onclick="showTab('jobs',this)">Job List</button>
+  <button onclick="showTab('settings',this)">Settings</button>
+</nav>
+
+<!-- SKIP MODAL -->
+<div class="modal-overlay" id="skip-modal">
+  <div class="modal">
+    <h3 id="modal-title">Skip reason</h3>
+    <div class="field">
+      <label>Category</label>
+      <select id="skip-category" onchange="updateReasonOptions()">
+        <option value="operational">Operational</option>
+        <option value="equalization">Equalization</option>
+        <option value="accountability">Accountability</option>
+        <option value="availability">Availability</option>
+      </select>
+    </div>
+    <div class="field" style="margin-top:8px;">
+      <label>Reason</label>
+      <select id="skip-reason"></select>
+    </div>
+    <div class="modal-btns">
+      <button class="btn btn-primary" style="flex:1" onclick="confirmSkip()">Confirm skip</button>
+      <button class="btn" style="flex:1" onclick="closeModal()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<main>
+
+<!-- LOG JOB -->
+<div id="tab-log">
+  <div class="card">
+    <div class="card-title">Job details</div>
+    <div class="form-grid">
+      <div class="field"><label>Job reference</label><input type="text" id="jobname" placeholder="e.g. Durg 412" /></div>
+      <div class="field"><label>Date</label><input type="date" id="jobdate" /></div>
+    </div>
+    <div class="form-grid">
+      <div class="field"><label>List price ($)</label><input type="number" id="listprice" placeholder="e.g. 15000" min="0" step="100" oninput="calcGross()" /></div>
+      <div class="field"><label>Discount ($) <span id="disc-pct" style="color:var(--danger);font-weight:600;font-size:11px;"></span></label><input type="number" id="discountamt" placeholder="0" min="0" step="50" oninput="calcGross()" /></div>
+    </div>
+    <div class="form-grid">
+      <div class="field"><label>Net gross ($)</label><input type="number" id="gross" placeholder="Auto-calculated" min="0" class="auto-field" oninput="calcSplitPreview()" /></div>
+      <div class="field"><label>Linear feet</label><input type="number" id="linfeet" placeholder="e.g. 180" min="0" /></div>
+    </div>
+    <div class="form-grid">
+      <div class="field"><label>Downspouts</label><input type="number" id="downspouts" placeholder="e.g. 6" min="0" /></div>
+      <div class="field"><label>Distance from branch (mi)</label><input type="number" id="distance" placeholder="e.g. 12" min="0" /></div>
+    </div>
+    <div class="form-grid">
+      <div class="field"><label>Stories</label><select id="stories"><option value="1">1 story</option><option value="2">2 story</option></select></div>
+      <div class="field"><label>Three-man job?</label><select id="is_three_man" onchange="toggleThreeMan()"><option value="0">No (auto split)</option><option value="1">Yes (manual entry)</option></select></div>
+    </div>
+    <div class="form-grid">
+      <div class="field"><label>Actual hours (from timesheet)</label><input type="number" id="actual_hours" placeholder="e.g. 6.5" min="0" step="0.25" /></div>
+      <div class="field"></div>
+    </div>
+
+    <hr class="form-divider" />
+    <div class="card-title">Lead — assign from Rotation tab</div>
+    <div class="crew-slots" style="grid-template-columns:1fr;">
+      <div class="crew-slot"><div class="crew-slot-label">Lead</div><div class="crew-slot-name" id="lead-display">— go to Rotation tab to assign</div><div class="crew-slot-opp" id="lead-opp"></div><input type="hidden" id="lead-name" /><input type="hidden" id="lead-role" value="lead" /></div>
+    </div>
+
+    <div class="card-title">Helper(s) — select below</div>
+    <div class="helper-selector" id="helper-selector"></div>
+
+    <div id="three-man-manual" style="display:none;">
+      <hr class="form-divider" />
+      <div class="card-title">Manual opportunity dollar entry</div>
+      <div class="form-grid">
+        <div class="field"><label id="lead-manual-label">Lead opp ($)</label><input type="number" id="lead-manual" placeholder="0" min="0" /></div>
+        <div class="field"><label id="h1-manual-label">Helper 1 opp ($)</label><input type="number" id="h1-manual" placeholder="0" min="0" /></div>
+        <div class="field"><label id="h2-manual-label">Helper 2 opp ($)</label><input type="number" id="h2-manual" placeholder="0" min="0" /></div>
+      </div>
+    </div>
+
+    <div class="split-preview" id="split-preview">Select lead and helper to see split</div>
+    <div class="error-msg" id="form-error"></div>
+    <button class="btn btn-primary" id="btn-add" onclick="addJob()" style="width:100%;padding:9px;font-size:14px;margin-top:4px;">Add job</button>
+    <button id="cancel-edit" onclick="cancelEdit()" style="display:none;width:100%;margin-top:6px;padding:8px;border-radius:var(--radius);border:1px solid var(--border-strong);background:var(--surface);color:var(--text-secondary);font-size:13px;cursor:pointer;">Cancel edit</button>
+  </div>
+</div>
+
+<!-- ROTATION -->
+<div id="tab-rotation" style="display:none;">
+  <div class="card">
+    <div class="card-title" style="display:flex;justify-content:space-between;">
+      <span>Lead rotation</span>
+      <button class="btn btn-sm" onclick="resetRotation()">Reset</button>
+    </div>
+    <div id="past-month-notice" style="display:none;background:var(--warning-bg);border:1px solid #e0c980;border-radius:var(--radius);padding:8px 12px;margin-bottom:10px;font-size:12px;color:var(--warning);">Viewing a past month — rotation is locked. Switch to the current month to manage assignments.</div>
+    <div class="round-info">
+      <span id="round-progress">Loading...</span>
+      <span class="round-badge" id="round-badge">Round 1</span>
+    </div>
+    <div class="queue-list" id="leads-queue"></div>
+    <div id="rotation-controls" style="margin-top:10px;display:flex;gap:8px;align-items:center;">
+      <button class="btn btn-primary btn-sm" id="close-round-btn" onclick="closeRoundManually()" style="flex:1;">Close round &amp; start next</button>
+      <div style="font-size:11px;color:var(--text-muted);flex:2;">Assign or skip moves to bottom. Close round when all jobs are done.</div>
+    </div>
+  </div>
+</div>
+
+<!-- TOTALS -->
+<div id="tab-totals" style="display:none;">
+  <div class="card">
+    <div class="month-nav">
+      <button class="btn btn-sm" onclick="prevMonth()">&#8592;</button>
+      <span class="month-label" id="month-display"></span>
+      <button class="btn btn-sm" onclick="nextMonth()">&#8594;</button>
+    </div>
+    <div class="card-title">Leads</div>
+    <div class="totals-grid" id="leads-totals"></div>
+    <br/>
+    <div class="card-title">Helpers</div>
+    <div class="totals-grid" id="helpers-totals"></div>
+  </div>
+  <div class="card">
+    <div class="card-title">Workload allocation — what each person was assigned</div>
+    <div class="totals-grid" id="metrics-grid"></div>
+  </div>
+</div>
+
+<!-- ROUND LOG -->
+<div id="tab-rounds" style="display:none;">
+  <div class="card">
+    <div class="month-nav">
+      <button class="btn btn-sm" onclick="prevMonth()">&#8592;</button>
+      <span class="month-label" id="month-display-rounds"></span>
+      <button class="btn btn-sm" onclick="nextMonth()">&#8594;</button>
+    </div>
+    <div class="card-title">Lead round history</div>
+    <div id="round-log"></div>
+  </div>
+</div>
+
+<!-- JOB LIST -->
+<div id="tab-jobs" style="display:none;">
+  <div class="card">
+    <div class="month-nav">
+      <button class="btn btn-sm" onclick="prevMonth()">&#8592;</button>
+      <span class="month-label" id="month-display-jobs"></span>
+      <button class="btn btn-sm" onclick="nextMonth()">&#8594;</button>
+    </div>
+    <div id="jobs-container"><div class="empty">No jobs this month</div></div>
+  </div>
+</div>
+
+<!-- SETTINGS -->
+<div id="tab-settings" style="display:none;">
+  <div class="card">
+    <div class="card-title">Helper split percentages</div>
+    <div class="settings-grid">
+      <div class="setting-item"><span>Daniel %</span><input type="number" class="setting-input" id="s-daniel" min="1" max="50" /></div>
+      <div class="setting-item"><span>Darnez %</span><input type="number" class="setting-input" id="s-darnez" min="1" max="50" /></div>
+      <div class="setting-item"><span>Daryl %</span><input type="number" class="setting-input" id="s-daryl" min="1" max="50" /></div>
+    </div>
+    <br/>
+    <div class="card-title">Equalization thresholds</div>
+    <div class="settings-grid">
+      <div class="setting-item"><span>Lead threshold ($)</span><input type="number" class="setting-input" id="s-lead-thresh" min="1000" step="500" /></div>
+      <div class="setting-item"><span>Helper threshold ($)</span><input type="number" class="setting-input" id="s-helper-thresh" min="500" step="250" /></div>
+      <div class="setting-item"><span>Min job value ($)</span><input type="number" class="setting-input" id="s-min-job" min="1000" step="500" /></div>
+    </div>
+    <br/>
+    <button class="btn btn-primary" onclick="saveAllSettings()" style="width:100%">Save settings</button>
+  </div>
+</div>
+
+</main>
+
+<script>
+const SUPABASE_URL = 'https://nixyuazdwhyjwrbjivdp.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5peHl1YXpkd2h5andyYmppdmRwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg3OTc0ODEsImV4cCI6MjEwNDM3MzQ4MX0.xOCe6qG37rTTQ7SaQra0BtF4Gbm_qbQMufUfqFBLEgs';
+const { createClient } = supabase;
+const db = createClient(SUPABASE_URL, SUPABASE_KEY, {
+  auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+  global: { headers: { apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY } },
+  realtime: { params: { eventsPerSecond: 10 } }
+});
+
+const LEADS = ['David','Richard','Justus','Wayne'];
+const HELPERS = ['Daniel','Darnez','Daryl'];
+const CREW = { David:'lead', Richard:'lead', Justus:'lead', Wayne:'lead', Daniel:'helper', Darnez:'helper', Daryl:'helper' };
+const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+const SKIP_REASONS = {
+  operational: ['Geographic routing','Skill match required','Job complexity','Manager discretion'],
+  equalization: ['Opportunity rebalance','High dollar run — next job priority'],
+  accountability: ['Past due service call','Protocol compliance','Performance review pending'],
+  availability: ['Vacation / out of town','Scheduling hold','Unavailable']
+};
+
+let viewMonth = new Date().getMonth();
+let viewYear = new Date().getFullYear();
+let allJobs = [], allRoundAssignments = [], allRounds = [];
+let leadQueue = [...LEADS];
+let currentRound = 1;
+let roundActions = {}; // name -> 'assign' or 'skip' for current round
+let settings = {};
+let selectedLead = null;
+let selectedHelpers = [];
+let editingId = null;
+let skipPending = null;
+let leadSnapshot = null;
+
+document.getElementById('jobdate').value = new Date().toISOString().slice(0,10);
+
+// NAV
+function showTab(tab, btn) {
+  document.querySelectorAll('[id^="tab-"]').forEach(el => el.style.display = 'none');
+  document.querySelectorAll('nav button').forEach(el => el.classList.remove('active'));
+  document.getElementById('tab-' + tab).style.display = '';
+  if (btn) btn.classList.add('active');
+  if (['totals','rounds','jobs'].includes(tab)) renderMonthData();
+}
+
+function monthKey(m, y) { return y + '-' + String(m+1).padStart(2,'0'); }
+function currentMK() { return monthKey(viewMonth, viewYear); }
+function prevMonth() { if(--viewMonth<0){viewMonth=11;viewYear--;} renderMonthData(); }
+function nextMonth() { if(++viewMonth>11){viewMonth=0;viewYear++;} renderMonthData(); }
+
+// SETTINGS
+async function loadSettings() {
+  const { data } = await db.from('settings').select('*');
+  if (data) data.forEach(s => settings[s.key] = s.value);
+  document.getElementById('s-daniel').value = settings.split_daniel || 30;
+  document.getElementById('s-darnez').value = settings.split_darnez || 40;
+  document.getElementById('s-daryl').value = settings.split_daryl || 30;
+  document.getElementById('s-lead-thresh').value = settings.equalization_lead_threshold || 7000;
+  document.getElementById('s-helper-thresh').value = settings.equalization_helper_threshold || 3000;
+  document.getElementById('s-min-job').value = settings.equalization_min_job || 10000;
+  renderHelperSelector();
+}
+
+async function saveSetting(key, value) {
+  settings[key] = String(value);
+  const { data } = await db.from('settings').select('id').eq('key', key);
+  if (data && data.length > 0) await db.from('settings').update({ value: String(value), updated_at: new Date().toISOString() }).eq('key', key);
+  else await db.from('settings').insert({ key, value: String(value) });
+}
+
+async function saveAllSettings() {
+  await saveSetting('split_daniel', document.getElementById('s-daniel').value);
+  await saveSetting('split_darnez', document.getElementById('s-darnez').value);
+  await saveSetting('split_daryl', document.getElementById('s-daryl').value);
+  await saveSetting('equalization_lead_threshold', document.getElementById('s-lead-thresh').value);
+  await saveSetting('equalization_helper_threshold', document.getElementById('s-helper-thresh').value);
+  await saveSetting('equalization_min_job', document.getElementById('s-min-job').value);
+  renderHelperSelector();
+  alert('Settings saved');
+}
+
+function getHelperSplit(name) {
+  return parseFloat(settings['split_' + name.toLowerCase()] || 30) / 100;
+}
+
+// HELPER SELECTOR
+function renderHelperSelector() {
+  const sel = document.getElementById('helper-selector');
+  sel.innerHTML = HELPERS.map(name => {
+    const pct = Math.round(getHelperSplit(name) * 100);
+    const isSelected = selectedHelpers.includes(name);
+    return `<button class="helper-btn${isSelected ? ' selected' : ''}" onclick="toggleHelper('${name}')">${name} (${pct}%)</button>`;
+  }).join('');
+}
+
+function toggleHelper(name) {
+  if (selectedHelpers.includes(name)) {
+    selectedHelpers = selectedHelpers.filter(h => h !== name);
+  } else {
+    if (selectedHelpers.length >= 2) { alert('Maximum 2 helpers per job'); return; }
+    selectedHelpers.push(name);
+  }
+  renderHelperSelector();
+  calcSplitPreview();
+}
+
+// SPLIT
+const SETUP_FEE = 2750;
+const COMMISSION_RATE = 0.11;
+
+function calcGross() {
+  const list = parseFloat(document.getElementById('listprice').value) || 0;
+  const disc = parseFloat(document.getElementById('discountamt').value) || 0;
+  if (list > 0) {
+    const net = Math.max(0, list - disc);
+    document.getElementById('gross').value = net;
+    const commBase = Math.max(0, net - SETUP_FEE);
+    const commTotal = commBase * COMMISSION_RATE;
+    document.getElementById('disc-pct').textContent = disc > 0
+      ? '(' + (disc/list*100).toFixed(1) + '% off) · Commission base: $' + commBase.toLocaleString() + ' · Crew pool: $' + Math.round(commTotal).toLocaleString()
+      : '· Commission base: $' + commBase.toLocaleString() + ' · Crew pool: $' + Math.round(commTotal).toLocaleString();
+  }
+  calcSplitPreview();
+}
+
+function commissionBase(gross) {
+  return Math.max(0, gross - SETUP_FEE);
+}
+
+function calcSplitPreview() {
+  const gross = parseFloat(document.getElementById('gross').value) || 0;
+  const isThreeMan = document.getElementById('is_three_man').value === '1';
+  const preview = document.getElementById('split-preview');
+  const base = commissionBase(gross);
+  const pool = base * COMMISSION_RATE;
+  if (!selectedLead) { preview.textContent = 'Assign lead from Rotation tab'; return; }
+  if (isThreeMan) { preview.textContent = 'Three-man — enter amounts manually below'; return; }
+  if (selectedHelpers.length === 0) {
+    preview.textContent = gross ? selectedLead + ' solo — opp $' + Math.round(pool).toLocaleString() + ' (base $' + base.toLocaleString() + ' × 11%)' : 'Select helper or log as solo';
+    return;
+  }
+  const parts = [];
+  let leadPct = 1.0;
+  selectedHelpers.forEach(h => { leadPct -= getHelperSplit(h); });
+  parts.push(selectedLead + ' $' + Math.round(pool * leadPct).toLocaleString() + ' (' + Math.round(leadPct*100) + '%)');
+  selectedHelpers.forEach(h => {
+    const pct = getHelperSplit(h);
+    parts.push(h + ' $' + Math.round(pool * pct).toLocaleString() + ' (' + Math.round(pct*100) + '%)');
+  });
+  preview.textContent = 'Crew pool $' + Math.round(pool).toLocaleString() + '  →  ' + parts.join('  ·  ');
+}
+
+function toggleThreeMan() {
+  document.getElementById('three-man-manual').style.display = document.getElementById('is_three_man').value === '1' ? '' : 'none';
+  calcSplitPreview();
+}
+
+// ROTATION
+async function loadRotation() {
+  const mk = currentMK();
+  const { data } = await db.from('rotation').select('*').eq('month_key', mk).eq('role', 'lead');
+  if (data && data.length > 0) {
+    leadQueue = data[0].queue_order;
+    currentRound = data[0].current_round || 1;
+  } else {
+    leadQueue = [...LEADS];
+    currentRound = 1;
+    await saveRotationState();
+  }
+  await loadCurrentRoundActions();
+  renderRotation();
+}
+
+async function saveRotationState() {
+  const mk = currentMK();
+  const { data } = await db.from('rotation').select('id').eq('month_key', mk).eq('role', 'lead');
+  const payload = { queue_order: leadQueue, permanent_order: LEADS, current_round: currentRound, updated_at: new Date().toISOString() };
+  if (data && data.length > 0) await db.from('rotation').update(payload).eq('id', data[0].id);
+  else await db.from('rotation').insert({ month_key: currentMK(), role: 'lead', ...payload });
+}
+
+async function loadCurrentRoundActions() {
+  roundActions = {};
+  const mk = currentMK();
+  const { data: rounds } = await db.from('rounds').select('*').eq('month_key', mk).eq('role', 'lead').eq('round_number', currentRound);
+  if (!rounds || rounds.length === 0) return;
+  const { data: ras } = await db.from('round_assignments').select('*').eq('round_id', rounds[0].id);
+  if (ras) ras.forEach(ra => roundActions[ra.name] = ra.action);
+}
+
+function isPastMonth() {
+  const now = new Date();
+  return viewYear < now.getFullYear() || (viewYear === now.getFullYear() && viewMonth < now.getMonth());
+}
+
+function renderRotation() {
+  const done = Object.keys(roundActions).length;
+  const past = isPastMonth();
+  document.getElementById('round-badge').textContent = 'Round ' + currentRound;
+  document.getElementById('round-progress').textContent = done + ' of 4 complete this round';
+  document.getElementById('past-month-notice').style.display = past ? 'block' : 'none';
+  document.getElementById('rotation-controls').style.display = past ? 'none' : 'flex';
+
+  document.getElementById('leads-queue').innerHTML = leadQueue.map((name, i) => {
+    const isNext = i === 0;
+    const action = roundActions[name];
+    let cls = 'queue-item' + (isNext && !action ? ' up-next' : action ? ' done' : '');
+    let tag = action === 'assign' ? '<span class="done-tag">Assigned ✓</span>' : action === 'skip' ? '<span class="skip-tag">Skipped</span>' : isNext ? '<span class="next-tag">Next up</span>' : '';
+    const btns = (!action && !past) ? `<div class="queue-btns">
+      <button class="q-btn assign" onclick="assignLead('${name}')">Assign</button>
+      <button class="q-btn skip" onclick="initiateSkip('${name}')">Skip</button>
+    </div>` : '';
+    return `<div class="${cls}"><span class="queue-pos">${i+1}</span><span class="queue-name">${name}</span>${tag}${btns}</div>`;
+  }).join('');
+}
+
+async function assignLead(name) {
+  if (isPastMonth()) return;
+  if (!leadSnapshot) leadSnapshot = [...leadQueue];
+  selectedLead = name;
+  document.getElementById('lead-display').textContent = name;
+  document.getElementById('lead-display').className = 'crew-slot-name filled';
+  document.getElementById('lead-name').value = name;
+  // Move to bottom
+  const idx = leadQueue.indexOf(name);
+  if (idx !== -1) { leadQueue.splice(idx, 1); leadQueue.push(name); }
+  await saveRotationState();
+  await logRoundAction(name, 'assign', null, null, null);
+  roundActions[name] = 'assign';
+  await checkRoundComplete();
+  renderRotation();
+  calcSplitPreview();
+  // Switch to log tab
+  showTab('log', document.querySelectorAll('nav button')[0]);
+}
+
+function initiateSkip(name) {
+  skipPending = name;
+  document.getElementById('modal-title').textContent = 'Skip reason — ' + name;
+  updateReasonOptions();
+  document.getElementById('skip-modal').classList.add('open');
+}
+
+function updateReasonOptions() {
+  const cat = document.getElementById('skip-category').value;
+  document.getElementById('skip-reason').innerHTML = SKIP_REASONS[cat].map(r => `<option value="${r}">${r}</option>`).join('');
+}
+
+function closeModal() { document.getElementById('skip-modal').classList.remove('open'); skipPending = null; }
+
+async function confirmSkip() {
+  if (!skipPending) return;
+  const name = skipPending;
+  const reason = document.getElementById('skip-reason').value;
+  const category = document.getElementById('skip-category').value;
+  closeModal();
+  // Move to bottom
+  const idx = leadQueue.indexOf(name);
+  if (idx !== -1) { leadQueue.splice(idx, 1); leadQueue.push(name); }
+  await saveRotationState();
+  await logRoundAction(name, 'skip', reason, category, null);
+  roundActions[name] = 'skip';
+  await checkRoundComplete();
+  renderRotation();
+}
+
+async function logRoundAction(name, action, reason, category, jobId) {
+  const mk = currentMK();
+  let round = await getOrCreateRound(mk);
+  const position = Object.keys(roundActions).length;
+  await db.from('round_assignments').insert({
+    round_id: round.id, month_key: mk, name, role: 'lead', action,
+    reason: reason || null, reason_category: category || null,
+    job_id: jobId || null, position_in_round: position
+  });
+}
+
+async function getOrCreateRound(mk) {
+  const { data } = await db.from('rounds').select('*').eq('month_key', mk).eq('role', 'lead').eq('round_number', currentRound);
+  if (data && data.length > 0) return data[0];
+  const { data: newRound } = await db.from('rounds').insert({ month_key: mk, role: 'lead', round_number: currentRound }).select().single();
+  return newRound;
+}
+
+async function checkRoundComplete() {
+  if (Object.keys(roundActions).length >= LEADS.length) {
+    const mk = currentMK();
+    const { data: rounds } = await db.from('rounds').select('*').eq('month_key', mk).eq('role', 'lead').eq('round_number', currentRound);
+    if (rounds && rounds.length > 0) await db.from('rounds').update({ completed: true, completed_at: new Date().toISOString() }).eq('id', rounds[0].id);
+    currentRound++;
+    roundActions = {};
+    await saveRotationState();
+  }
+}
+
+async function resetRotation() {
+  if (!confirm('Reset lead rotation to original order for this month? This will clear all round history for the current month.')) return;
+  const mk = currentMK();
+  // Delete all round assignments and rounds for this month
+  const { data: rounds } = await db.from('rounds').select('id').eq('month_key', mk).eq('role','lead');
+  if (rounds && rounds.length > 0) {
+    const ids = rounds.map(r => r.id);
+    await db.from('round_assignments').delete().in('round_id', ids);
+    await db.from('rounds').delete().in('id', ids);
+  }
+  // Reset rotation state
+  leadQueue = [...LEADS];
+  currentRound = 1;
+  roundActions = {};
+  leadSnapshot = null;
+  allRounds = [];
+  allRoundAssignments = [];
+  await saveRotationState();
+  renderRotation();
+  renderRoundLog();
+}
+
+// ADD JOB
+async function addJob() {
+  const errEl = document.getElementById('form-error');
+  errEl.style.display = 'none';
+  const gross = parseFloat(document.getElementById('gross').value);
+  const date = document.getElementById('jobdate').value;
+  const isThreeMan = document.getElementById('is_three_man').value === '1';
+  if (!gross || gross <= 0) { showErr('Enter a gross sale amount'); return; }
+  if (!date) { showErr('Select a date'); return; }
+  if (!selectedLead) { showErr('Assign a lead from the Rotation tab'); return; }
+
+  let assignments = [];
+  const base = commissionBase(gross);
+  const pool = base * COMMISSION_RATE;
+  if (isThreeMan) {
+    const leadOpp = parseFloat(document.getElementById('lead-manual').value) || 0;
+    assignments.push({ name: selectedLead, role: 'lead', opp: leadOpp, split_pct: leadOpp/pool*100 });
+    selectedHelpers.forEach((h, i) => {
+      const opp = parseFloat(document.getElementById('h' + (i+1) + '-manual').value) || 0;
+      assignments.push({ name: h, role: 'helper', opp, split_pct: opp/pool*100 });
+    });
+  } else {
+    let leadPct = 1.0;
+    selectedHelpers.forEach(h => { leadPct -= getHelperSplit(h); });
+    assignments.push({ name: selectedLead, role: 'lead', opp: Math.round(pool * leadPct), split_pct: Math.round(leadPct*100) });
+    selectedHelpers.forEach(h => {
+      const pct = getHelperSplit(h);
+      assignments.push({ name: h, role: 'helper', opp: Math.round(pool * pct), split_pct: Math.round(pct*100) });
+    });
+  }
+
+  const mk = date.slice(0, 7);
+  const jobData = {
+    date, jobname: document.getElementById('jobname').value.trim(),
+    gross: Math.round(gross),
+    listprice: parseInt(document.getElementById('listprice').value) || 0,
+    discountamt: parseInt(document.getElementById('discountamt').value) || 0,
+    linfeet: parseInt(document.getElementById('linfeet').value) || 0,
+    downspouts: parseInt(document.getElementById('downspouts').value) || 0,
+    stories: parseInt(document.getElementById('stories').value) || 1,
+    distance: parseInt(document.getElementById('distance').value) || 0,
+    month_key: mk, round_number: currentRound, is_three_man: isThreeMan,
+    actual_hours: parseFloat(document.getElementById('actual_hours').value) || null
+  };
+
+  let jobId = editingId;
+  if (editingId) {
+    await db.from('assignments').delete().eq('job_id', editingId);
+    await db.from('jobs').update(jobData).eq('id', editingId);
+  } else {
+    const { data: newJob, error } = await db.from('jobs').insert(jobData).select().single();
+    if (error) { showErr('Error: ' + error.message); return; }
+    jobId = newJob.id;
+    // Update round assignment job_id for the lead
+    const mk2 = currentMK();
+    const { data: rounds } = await db.from('rounds').select('*').eq('month_key', mk2).eq('role','lead').eq('round_number', currentRound - (Object.keys(roundActions).length === 0 ? 1 : 0));
+    if (rounds && rounds.length > 0) {
+      await db.from('round_assignments').update({ job_id: jobId }).eq('round_id', rounds[0].id).eq('name', selectedLead).is('job_id', null);
+    }
+  }
+
+  await db.from('assignments').insert(assignments.map(a => ({ ...a, job_id: jobId })));
+
+  editingId = null;
+  selectedLead = null;
+  selectedHelpers = [];
+  leadSnapshot = null;
+  document.getElementById('btn-add').textContent = 'Add job';
+  document.getElementById('cancel-edit').style.display = 'none';
+  clearJobForm();
+  await loadJobs();
+  await loadRoundData();
+  renderRotation();
+}
+
+function clearJobForm() {
+  ['jobname','gross','listprice','discountamt','linfeet','downspouts','distance'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('stories').value = '1';
+  document.getElementById('is_three_man').value = '0';
+  document.getElementById('three-man-manual').style.display = 'none';
+  document.getElementById('jobdate').value = new Date().toISOString().slice(0,10);
+  document.getElementById('actual_hours').value = '';
+  document.getElementById('disc-pct').textContent = '';
+  document.getElementById('lead-display').textContent = '— go to Rotation tab to assign';
+  document.getElementById('lead-display').className = 'crew-slot-name';
+  document.getElementById('lead-name').value = '';
+  document.getElementById('split-preview').textContent = 'Select lead and helper to see split';
+  document.getElementById('form-error').style.display = 'none';
+  selectedLead = null;
+  selectedHelpers = [];
+  renderHelperSelector();
+}
+
+async function cancelEdit() {
+  editingId = null;
+  if (leadSnapshot) {
+    leadQueue = [...leadSnapshot];
+    leadSnapshot = null;
+    await saveRotationState();
+  }
+  clearJobForm();
+  document.getElementById('btn-add').textContent = 'Add job';
+  document.getElementById('cancel-edit').style.display = 'none';
+  renderRotation();
+}
+
+function editJob(job) {
+  editingId = job.id;
+  document.getElementById('jobname').value = job.jobname || '';
+  document.getElementById('gross').value = job.gross;
+  document.getElementById('listprice').value = job.listprice || '';
+  document.getElementById('discountamt').value = job.discountamt || '';
+  document.getElementById('linfeet').value = job.linfeet || '';
+  document.getElementById('downspouts').value = job.downspouts || '';
+  document.getElementById('distance').value = job.distance || '';
+  document.getElementById('actual_hours').value = job.actual_hours || '';
+  document.getElementById('stories').value = job.stories || '1';
+  document.getElementById('jobdate').value = job.date;
+  document.getElementById('is_three_man').value = job.is_three_man ? '1' : '0';
+  toggleThreeMan();
+  const a = job.assignments || [];
+  const lead = a.find(x => x.role === 'lead');
+  const helpers = a.filter(x => x.role === 'helper');
+  if (lead) { selectedLead = lead.name; document.getElementById('lead-display').textContent = lead.name; document.getElementById('lead-display').className = 'crew-slot-name filled'; document.getElementById('lead-name').value = lead.name; }
+  selectedHelpers = helpers.map(h => h.name);
+  renderHelperSelector();
+  calcSplitPreview();
+  document.getElementById('btn-add').textContent = 'Save changes';
+  document.getElementById('cancel-edit').style.display = 'block';
+  showTab('log', document.querySelectorAll('nav button')[0]);
+}
+
+async function deleteJob(id) {
+  if (!confirm('Delete this job?')) return;
+  await db.from('jobs').delete().eq('id', id);
+  await loadJobs();
+}
+
+// DATA
+async function loadJobs() {
+  const { data } = await db.from('jobs').select('*, assignments(*)').order('date', { ascending: false });
+  allJobs = data || [];
+  renderMonthData();
+}
+
+async function loadRoundData() {
+  const mk = currentMK();
+  const { data: rounds } = await db.from('rounds').select('*').eq('month_key', mk).eq('role','lead');
+  allRounds = rounds || [];
+  if (allRounds.length > 0) {
+    const { data: ras } = await db.from('round_assignments').select('*').in('round_id', allRounds.map(r=>r.id)).order('created_at');
+    allRoundAssignments = ras || [];
+  } else allRoundAssignments = [];
+}
+
+function monthJobs() {
+  const mk = currentMK();
+  return allJobs.filter(j => j.month_key === mk || j.date.slice(0,7) === mk);
+}
+
+function renderMonthData() {
+  const label = MONTHS[viewMonth] + ' ' + viewYear;
+  ['month-display','month-display-rounds','month-display-jobs'].forEach(id => { const el = document.getElementById(id); if(el) el.textContent = label; });
+  renderTotals();
+  renderRoundLog();
+  renderJobList();
+}
+
+function renderTotals() {
+  const mj = monthJobs();
+  const totals={}, counts={}, feet={}, roundsWorked={};
+  Object.keys(CREW).forEach(n => { totals[n]=0; counts[n]=0; feet[n]=0; roundsWorked[n]=0; });
+  mj.forEach(j => (j.assignments||[]).forEach(a => {
+    if(totals[a.name]!==undefined){ totals[a.name]+=a.opp; counts[a.name]++; if(j.linfeet)feet[a.name]+=j.linfeet; }
+  }));
+  allRoundAssignments.filter(ra=>ra.action==='assign').forEach(ra=>{ if(roundsWorked[ra.name]!==undefined)roundsWorked[ra.name]++; });
+
+  document.getElementById('leads-totals').innerHTML = LEADS.map(name => {
+    const avg = roundsWorked[name]>0 ? Math.round(totals[name]/roundsWorked[name]) : 0;
+    return `<div class="stat-cell">
+      <div class="stat-name">${name}<span class="role-badge lead-badge">lead</span></div>
+      <div class="stat-amount">$${(totals[name]||0).toLocaleString()}</div>
+      <div class="stat-sub">${counts[name]} jobs · ${roundsWorked[name]} rounds</div>
+      <div class="stat-avg">$${avg.toLocaleString()} avg/round</div>
+    </div>`;
+  }).join('');
+
+  document.getElementById('helpers-totals').innerHTML = HELPERS.map(name => {
+    return `<div class="stat-cell">
+      <div class="stat-name">${name}<span class="role-badge helper-badge">helper</span></div>
+      <div class="stat-amount">$${(totals[name]||0).toLocaleString()}</div>
+      <div class="stat-sub">${counts[name]} jobs</div>
+    </div>`;
+  }).join('');
+
+  // Raw data collection — no formula applied yet, accumulating for future analysis
+  const actualHours = {}, totalFeet = {}, totalDownspouts = {}, totalDist = {};
+  Object.keys(CREW).forEach(n => { actualHours[n]=0; totalFeet[n]=0; totalDownspouts[n]=0; totalDist[n]=0; });
+  mj.forEach(j => {
+    (j.assignments||[]).forEach(a => {
+      if (actualHours[a.name] !== undefined) {
+        if (j.actual_hours) actualHours[a.name] += j.actual_hours;
+        if (j.linfeet) totalFeet[a.name] += j.linfeet;
+        if (j.downspouts) totalDownspouts[a.name] += j.downspouts;
+        if (j.distance) totalDist[a.name] += j.distance;
+      }
+    });
+  });
+
+  document.getElementById('metrics-grid').innerHTML = Object.keys(CREW).map(name => {
+    const role = CREW[name];
+    const badge = `<span class="role-badge ${role}-badge">${role}</span>`;
+    const ftVal = totalFeet[name] ? totalFeet[name].toLocaleString() + ' ft' : '— ft';
+    const dsVal = totalDownspouts[name] ? totalDownspouts[name] + ' downspouts' : '— downspouts';
+    const miVal = totalDist[name] ? totalDist[name] + ' miles' : '— miles';
+    const hrVal = actualHours[name] ? actualHours[name].toFixed(1) + ' hrs logged' : 'No hours yet';
+    return `<div class="stat-cell">
+      <div class="stat-name">${name}${badge}</div>
+      <div class="stat-amount">${ftVal}</div>
+      <div class="stat-sub">${dsVal}</div>
+      <div class="stat-sub">${miVal}</div>
+      <div style="font-size:10px;color:var(--text-muted);margin-top:3px;">${hrVal}</div>
+    </div>`;
+  }).join('');
+}
+
+function renderRoundLog() {
+  const el = document.getElementById('round-log');
+  const sorted = [...allRounds].sort((a,b)=>a.round_number-b.round_number);
+  if (sorted.length===0) { el.innerHTML='<div class="empty">No rounds logged yet</div>'; return; }
+  el.innerHTML = sorted.map(round => {
+    const ras = allRoundAssignments.filter(ra=>ra.round_id===round.id).sort((a,b)=>a.position_in_round-b.position_in_round);
+    const entries = ras.map(ra => {
+      const cls = ra.action==='assign'?'action-assigned':'action-skip';
+      const label = ra.action==='assign'?'Assigned':'Skipped';
+      const job = ra.job_id ? allJobs.find(j=>j.id===ra.job_id) : null;
+      const jobDetail = job ? ` · ${job.jobname||'Job'} · $${job.gross.toLocaleString()}` : '';
+      const reason = ra.reason ? ` · ${ra.reason}` : '';
+      return `<div class="round-entry">
+        <span class="entry-name">${ra.name}</span>
+        <div><span class="entry-action ${cls}">${label}</span><span class="entry-detail">${jobDetail}${reason}</span></div>
+      </div>`;
+    }).join('');
+    return `<div class="round-group">
+      <div class="round-header"><span>Round ${round.round_number}</span><span style="color:var(--text-muted)">${round.completed?'Complete ✓':'In progress'}</span></div>
+      ${entries||'<div style="padding:6px 0;font-size:12px;color:var(--text-muted)">No entries yet</div>'}
+    </div>`;
+  }).join('');
+}
+
+function renderJobList() {
+  const mj = monthJobs();
+  const container = document.getElementById('jobs-container');
+  if (mj.length===0) { container.innerHTML='<div class="empty">No jobs this month</div>'; return; }
+  container.innerHTML = `<table class="jobs-table">
+    <thead><tr><th>Date</th><th>Job</th><th>Gross</th><th>Ft</th><th></th></tr></thead>
+    <tbody>${mj.map(j=>{
+      const crew=(j.assignments||[]).map(a=>a.name+' $'+a.opp.toLocaleString()).join(' · ');
+      return `<tr>
+        <td style="color:var(--text-muted);white-space:nowrap">${j.date}</td>
+        <td><div style="font-weight:600">${j.jobname||'—'}</div><div style="font-size:11px;color:var(--text-muted)">${crew}</div></td>
+        <td class="job-gross">$${j.gross.toLocaleString()}</td>
+        <td style="color:var(--text-muted)">${j.linfeet||'—'}</td>
+        <td style="white-space:nowrap">
+          <button class="tbl-btn" style="color:var(--accent)" onclick='editJob(${JSON.stringify(j).replace(/'/g,"\\'")})'  >✎</button>
+          <button class="tbl-btn" style="color:var(--text-muted)" onclick="deleteJob(${j.id})">×</button>
+        </td>
+      </tr>`;
+    }).join('')}</tbody>
+  </table>`;
+}
+
+function showErr(msg) { const el=document.getElementById('form-error'); el.textContent=msg; el.style.display='block'; }
+
+async function closeRoundManually() {
+  if (!confirm('Close Round ' + currentRound + ' and start Round ' + (currentRound + 1) + '?')) return;
+  const mk = currentMK();
+  // Mark current round complete if it exists
+  const { data: rounds } = await db.from('rounds').select('*').eq('month_key', mk).eq('role','lead').eq('round_number', currentRound);
+  if (rounds && rounds.length > 0) {
+    await db.from('rounds').update({ completed: true, completed_at: new Date().toISOString() }).eq('id', rounds[0].id);
+  } else {
+    // Create it as complete so the log shows it
+    await db.from('rounds').insert({ month_key: mk, role: 'lead', round_number: currentRound, completed: true, completed_at: new Date().toISOString() });
+  }
+  currentRound++;
+  roundActions = {};
+  await saveRotationState();
+  await loadRoundData();
+  renderRotation();
+  renderRoundLog();
+}
+
+// REALTIME
+db.channel('mgr-v3')
+  .on('postgres_changes',{event:'*',schema:'public',table:'jobs'},loadJobs)
+  .on('postgres_changes',{event:'*',schema:'public',table:'assignments'},loadJobs)
+  .on('postgres_changes',{event:'*',schema:'public',table:'rotation'},loadRotation)
+  .on('postgres_changes',{event:'*',schema:'public',table:'round_assignments'},()=>{ loadRoundData().then(()=>{ renderRoundLog(); renderTotals(); }); })
+  .subscribe(s => { document.getElementById('conn-status').textContent = s==='SUBSCRIBED'?'Live':'Connecting...'; });
+
+// INIT
+loadSettings().then(() => { loadJobs(); loadRotation(); loadRoundData(); });
+</script>
+</body>
+</html>
