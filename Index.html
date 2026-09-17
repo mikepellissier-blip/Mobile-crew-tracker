@@ -216,6 +216,7 @@ input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1
     </div>
 
     <div class="split-preview" id="split-preview">Select lead and helper to see split</div>
+    <div id="edit-notice" style="display:none;background:var(--warning-bg);border:1px solid #e0c980;border-radius:var(--radius);padding:7px 10px;margin-bottom:8px;font-size:12px;color:var(--warning);">Editing existing job — only job details and split amounts will be updated. Rotation and round history will not be affected.</div>
     <div class="error-msg" id="form-error"></div>
     <button class="btn btn-primary" id="btn-add" onclick="addJob()" style="width:100%;padding:9px;font-size:14px;margin-top:4px;">Add job</button>
     <button id="cancel-edit" onclick="cancelEdit()" style="display:none;width:100%;margin-top:6px;padding:8px;border-radius:var(--radius);border:1px solid var(--border-strong);background:var(--surface);color:var(--text-secondary);font-size:13px;cursor:pointer;">Cancel edit</button>
@@ -673,6 +674,9 @@ async function addJob() {
   const gross = parseFloat(document.getElementById('gross').value);
   const date = document.getElementById('jobdate').value;
   const isThreeMan = document.getElementById('is_three_man').value === '1';
+  // Always read lead names fresh from the form fields
+  selectedLead = document.getElementById('lead-name').value || selectedLead;
+  selectedLead2 = document.getElementById('lead2-name').value || null;
   if (!gross || gross <= 0) { showErr('Enter a gross sale amount'); return; }
   if (!date) { showErr('Select a date'); return; }
   if (!selectedLead) { showErr('Assign at least one lead from the Rotation tab'); return; }
@@ -718,7 +722,7 @@ async function addJob() {
     const { data: newJob, error } = await db.from('jobs').insert(jobData).select().single();
     if (error) { showErr('Error: ' + error.message); return; }
     jobId = newJob.id;
-    // Update round assignment job_id for lead(s)
+    // Link job_id to round assignments for lead(s)
     const mk2 = currentMK();
     const { data: rounds } = await db.from('rounds').select('*').eq('month_key', mk2).eq('role','lead').eq('round_number', currentRound - (Object.keys(roundActions).length === 0 ? 1 : 0));
     if (rounds && rounds.length > 0) {
@@ -727,6 +731,9 @@ async function addJob() {
         await db.from('round_assignments').update({ job_id: jobId }).eq('round_id', rounds[0].id).eq('name', selectedLead2).is('job_id', null);
       }
     }
+    // Log round actions for new jobs only
+    roundActions[selectedLead] = 'assign';
+    if (selectedLead2) roundActions[selectedLead2] = 'assign';
   }
 
   await db.from('assignments').insert(assignments.map(a => ({ ...a, job_id: jobId })));
@@ -760,6 +767,7 @@ function clearJobForm() {
   document.getElementById('lead2-name').value = '';
   document.getElementById('split-preview').textContent = 'Select lead and helper to see split';
   document.getElementById('form-error').style.display = 'none';
+  document.getElementById('edit-notice').style.display = 'none';
   selectedLead = null;
   selectedLead2 = null;
   selectedHelpers = [];
