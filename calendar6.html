@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Crew Calendar</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.118.0"></script>
+<style>:root{--bg:#f4f5f2;--card:#fff;--ink:#1d2320;--muted:#6b736e;--line:#dde1dc;--acc:#1f6b45;--accSoft:#e3f0e8;--warn:#a33b2b;--warnSoft:#f7e4e0;--today:#fff7d6}
+@media (prefers-color-scheme:dark){:root{--bg:#141816;--card:#1d2320;--ink:#eef1ee;--muted:#9aa39d;--line:#2e3631;--acc:#5cbf8a;--accSoft:#1f3329;--warn:#e88673;--warnSoft:#3a221d;--today:#33301f}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.35 -apple-system,system-ui,sans-serif}
+header{padding:14px 16px;background:var(--acc);color:#fff}header h1{margin:0;font-size:20px}header p{margin:2px 0 0;opacity:.85;font-size:13px}
+main{max-width:1400px;margin:0 auto;padding:12px}
+.bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+.bar h2{margin:0 6px;font-size:20px;min-width:150px;text-align:center}
+button{font:inherit;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:8px;padding:8px 12px;cursor:pointer}
+button.on{background:var(--acc);border-color:var(--acc);color:#fff}
+.sp{flex:1}
+.legend{display:flex;gap:12px;flex-wrap:wrap;font-size:13px;color:var(--muted);margin-bottom:10px}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:4px;vertical-align:-1px}
+.outs{background:var(--warnSoft);color:var(--warn);border-radius:8px;padding:6px 10px;font-size:14px;margin-bottom:10px}
+.grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));border-left:1px solid var(--line);border-top:1px solid var(--line);background:var(--card);border-radius:10px;overflow:hidden}
+.dow{font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);padding:6px;border-right:1px solid var(--line);border-bottom:1px solid var(--line);text-align:center}
+.day{min-height:110px;padding:4px;border-right:1px solid var(--line);border-bottom:1px solid var(--line);min-width:0}
+.day.other{opacity:.45}.day.today{background:var(--today)}
+.dnum{font-size:13px;color:var(--muted);margin:0 2px 3px}
+.day.today .dnum{color:var(--ink);font-weight:700}
+.ev{display:block;width:100%;text-align:left;border:0;border-left:4px solid var(--c);background:color-mix(in srgb,var(--c) 13%,var(--card));border-radius:6px;padding:4px 6px;margin-bottom:4px;font-size:12.5px;line-height:1.3;overflow:hidden}
+.ev b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:13px}
+.ev .l{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--muted)}
+.ev .crew{color:var(--ink)}
+.ev.tbd,.card.tbd{border-left-style:dashed;background:var(--card);outline:1px dashed var(--line)}
+.ev.tbd .crew,.card.tbd .crewline{color:var(--warn);font-weight:600}
+@media (max-width:760px){.day{min-height:64px;padding:2px}.ev{padding:2px 4px;font-size:11px}.ev .l{display:none}.ev .crew{display:block}.ev b{font-size:11.5px}.bar{gap:5px;flex-wrap:nowrap}.bar button{padding:7px 9px;font-size:15px}.bar h2{font-size:16px;min-width:0;margin:0 2px;white-space:nowrap}}
+.list .date{font-size:13px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:16px 2px 6px}
+.list .date.today{color:var(--acc);font-weight:700}
+.card{background:var(--card);border:1px solid var(--line);border-left:5px solid var(--c,var(--line));border-radius:10px;padding:12px 14px;margin-bottom:8px}
+.card .cust{font-size:18px;font-weight:700}
+.card .meta{display:flex;flex-wrap:wrap;gap:4px 16px;margin-top:4px;font-size:15px}
+.card .meta span{white-space:nowrap}.card .k{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.04em;margin-right:4px}
+.card .crewline{margin-top:6px;font-weight:600}
+.sec{font-size:13px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:22px 2px 8px}
+.muted{color:var(--muted);font-size:14px}
+.unsched{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:8px}
+.unsched .card{margin:0}
+#modal{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:center;justify-content:center;padding:16px;z-index:9}
+#modal.open{display:flex}#modal .card{max-width:420px;width:100%;margin:0}
+.hide{display:none}
+</style></head><body>
+<header><h1>Crew Calendar</h1><p>LeafGuard Mobile installs · <span id="sync">loading…</span></p><p><a href="crew_view.html" style="color:#fff;font-weight:600">← Who's Next</a></p></header>
+<main>
+  <div class="bar">
+    <button id="prev" aria-label="Previous month">‹</button><h2 id="title"></h2><button id="next" aria-label="Next month">›</button>
+    <button id="todayBtn">Today</button><span class="sp"></span>
+    <button data-v="month">Month</button><button data-v="list">List</button>
+  </div>
+  <div id="outs"></div>
+  <div class="legend" id="legend"></div>
+  <div id="view"></div>
+  <div id="unsched"></div>
+</main>
+<div id="modal"><div class="card" id="mcard"></div></div>
+<script>
+const SUPABASE_URL = "https://nixyuazdwhyjwrbjivdp.supabase.co";
+const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5peHl1YXpkd2h5andyYmppdmRwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg3OTc0ODEsImV4cCI6MjEwNDM3MzQ4MX0.xOCe6qG37rTTQ7SaQra0BtF4Gbm_qbQMufUfqFBLEgs";
+const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+const LEAD_COLORS = { Justus:'#2e8b57', David:'#2f6db5', Richard:'#c47a1c' };
+const OTHER = '#8a8f8b';
+const UNSCHED_DAYS = 45;   // jobs closed within this many days with no install date are listed below the calendar
+
+let LOG = [], OUT = [];
+let view = (window.innerWidth < 700) ? 'list' : 'month';
+let cur = new Date(); cur = new Date(cur.getFullYear(), cur.getMonth(), 1);
+
+const $ = id => document.getElementById(id);
+function esc(s){ return String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+const pd = s => { const [y,m,d]=s.split('-').map(Number); return new Date(y,m-1,d); };
+const key = d => d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+const money = v => (v||v===0) ? '$'+Number(v).toLocaleString() : '';
+const leadsOf = j => j.leads || (j.lead ? String(j.lead).split(' & ') : []);
+const helpersOf = j => j.helpers || (j.helper ? String(j.helper).split(' & ') : []);
+const colorOf = j => LEAD_COLORS[leadsOf(j)[0]] || OTHER;
+const hasCrew = j => leadsOf(j).length>0 || helpersOf(j).length>0;
+const crewText = j => hasCrew(j) ? [leadsOf(j).join(' & '), helpersOf(j).join(' & ')].filter(Boolean).join(' + ') : 'Crew not assigned yet';
+const colors = j => (j.gColor||j.dColor) ? `${j.gColor||'–'}/${j.dColor||'–'}` : '';
+const feet = j => [ (j.gutterFt!=null || j.dsFt!=null) ? `${j.gutterFt??'–'}/${j.dsFt??'–'}` : '', colors(j) ].filter(Boolean).join(' ');
+
+async function load(){
+  const { data, error } = await db.from('settings').select('key,value').in('key',['rot2_log','rot2_out']);
+  if (error) throw error;
+  const m = {}; (data||[]).forEach(r => m[r.key] = r.value);
+  try { LOG = m.rot2_log ? JSON.parse(m.rot2_log) : []; } catch(e){ LOG = []; }
+  try { OUT = m.rot2_out ? JSON.parse(m.rot2_out) : []; } catch(e){ OUT = []; }
+}
+
+// Spread each scheduled job across its working days (Mon–Sat, Sundays skipped)
+function byDay(){
+  const map = {};
+  LOG.filter(l => l.type==='job' && l.installDate).forEach(j => {
+    const n = Math.max(1, Math.min(10, Number(j.days)||1));
+    let d = pd(j.installDate), done = 0;
+    while (done < n){
+      const dow = d.getDay();
+      if (done===0 || dow!==0){
+        (map[key(d)] ||= []).push({ j, part: n>1 ? `Day ${done+1} of ${n}` : '' });
+        done++;
+      }
+      d = new Date(d.getFullYear(), d.getMonth(), d.getDate()+1);
+    }
+  });
+  Object.values(map).forEach(a => a.sort((x,y)=> (x.j.n||0)-(y.j.n||0)));
+  return map;
+}
+
+function chip(e){
+  const j=e.j, l2=[feet(j), j.city].filter(Boolean).join(' · ');
+  return `<button class="ev${hasCrew(j)?'':' tbd'}" style="--c:${colorOf(j)}" data-id="${j.id}">
+    <b>${esc(j.customer||'(no name)')}${e.part?' ('+e.part.replace(/Day (\d+) of (\d+)/,'$1/$2')+')':''}</b>
+    ${l2?`<span class="l">${esc(l2)}</span>`:''}
+    ${j.value!=null?`<span class="l">${money(j.value)}${j.jobNo?' · #'+esc(j.jobNo):''}</span>`:(j.jobNo?`<span class="l">#${esc(j.jobNo)}</span>`:'')}
+    <span class="l crew">${esc(crewText(j))}</span></button>`;
+}
+function card(j, part){
+  return `<div class="card${hasCrew(j)?'':' tbd'}" style="--c:${colorOf(j)}">
+    <div class="cust">${esc(j.customer||'(no name)')}${part?` <span class="muted">· ${part}</span>`:''}</div>
+    <div class="meta">
+      ${j.jobNo?`<span><span class="k">Job ID</span>${esc(j.jobNo)}</span>`:''}
+      ${feet(j)?`<span><span class="k">Gutter/DS</span>${feet(j)}</span>`:''}
+      ${j.city?`<span><span class="k">City</span>${esc(j.city)}</span>`:''}
+      ${j.value!=null?`<span><span class="k">Value</span>${money(j.value)}</span>`:''}
+    </div>
+    <div class="crewline">${esc(crewText(j))}</div></div>`;
+}
+
+function render(){
+  $('title').textContent = cur.toLocaleDateString([], {month: window.innerWidth<500?'short':'long', year:'numeric'});
+  document.querySelectorAll('[data-v]').forEach(b=>b.classList.toggle('on', b.dataset.v===view));
+  $('outs').innerHTML = OUT.length ? `<div class="outs">Out right now: ${OUT.map(esc).join(', ')}</div>` : '';
+  $('legend').innerHTML = Object.entries(LEAD_COLORS).map(([n,c])=>`<span><i style="background:${c}"></i>${n}'s crew</span>`).join('') + `<span><i style="background:none;outline:1px dashed ${OTHER}"></i>Crew not assigned yet</span>`;
+  const map = byDay(), tk = key(new Date());
+
+  if (view==='month'){
+    const start = new Date(cur.getFullYear(), cur.getMonth(), 1 - cur.getDay());
+    let h = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d=>`<div class="dow">${d}</div>`).join('');
+    const weeks = Math.ceil((cur.getDay() + new Date(cur.getFullYear(), cur.getMonth()+1, 0).getDate())/7);
+    for (let i=0;i<weeks*7;i++){
+      const d = new Date(start.getFullYear(), start.getMonth(), start.getDate()+i), k = key(d);
+      h += `<div class="day${d.getMonth()!==cur.getMonth()?' other':''}${k===tk?' today':''}"><div class="dnum">${d.getDate()}</div>${(map[k]||[]).map(chip).join('')}</div>`;
+    }
+    $('view').innerHTML = `<div class="grid">${h}</div>`;
+  } else {
+    const days = Object.keys(map).filter(k => k.slice(0,7)===key(cur).slice(0,7)).sort();
+    $('view').innerHTML = days.length ? '<div class="list">' + days.map(k => {
+      const d = pd(k);
+      return `<div class="date${k===tk?' today':''}">${k===tk?'Today · ':''}${d.toLocaleDateString([], {weekday:'long', month:'short', day:'numeric'})}</div>` +
+        map[k].map(e => card(e.j, e.part)).join('');
+    }).join('') + '</div>' : '<p class="muted" style="margin:16px 4px">No installs on the calendar this month.</p>';
+  }
+
+  const cutoff = Date.now() - UNSCHED_DAYS*864e5;
+  const un = LOG.filter(l => l.type==='job' && !l.installDate && (l.date ? pd(l.date).getTime() >= cutoff : l.id >= cutoff)).slice().reverse();
+  $('unsched').innerHTML = un.length ? `<div class="sec">Sold, not on the calendar yet (${un.length})</div><div class="unsched">${un.map(j=>card(j)).join('')}</div>` : '';
+}
+
+function openJob(id){
+  const j = LOG.find(l => String(l.id)===String(id)); if (!j) return;
+  let extra = j.installDate ? `<div class="muted" style="margin-top:8px">Install ${pd(j.installDate).toLocaleDateString([], {weekday:'short', month:'short', day:'numeric'})}${j.days>1?' · '+j.days+' working days':''}${j.n?' · rotation job #'+j.n:''}</div>` : '';
+  $('mcard').outerHTML = `<div class="card" id="mcard" style="--c:${colorOf(j)}">${card(j).replace(/^<div class="card"[^>]*>|<\/div>$/g,'')}${extra}<button id="mclose" style="width:100%;margin-top:12px">Close</button></div>`;
+  $('modal').classList.add('open');
+}
+document.addEventListener('click', e => {
+  const ev = e.target.closest('.ev'); if (ev) { openJob(ev.dataset.id); return; }
+  if (e.target.id==='mclose' || e.target.id==='modal') $('modal').classList.remove('open');
+});
+$('prev').onclick = () => { cur = new Date(cur.getFullYear(), cur.getMonth()-1, 1); render(); };
+$('next').onclick = () => { cur = new Date(cur.getFullYear(), cur.getMonth()+1, 1); render(); };
+$('todayBtn').onclick = () => { const t=new Date(); cur = new Date(t.getFullYear(), t.getMonth(), 1); render(); };
+document.querySelectorAll('[data-v]').forEach(b => b.onclick = () => { view = b.dataset.v; render(); });
+
+let busy=false;
+async function refresh(){
+  if (busy || document.hidden) return; busy=true;
+  try { await load(); render(); $('sync').textContent = 'Updated '+new Date().toLocaleTimeString([], {hour:'numeric', minute:'2-digit'}); }
+  catch(e){ $('sync').textContent = 'Could not reach the tracker — retrying'; }
+  busy=false;
+}
+render(); refresh(); setInterval(refresh, 30000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });
+</script>
+</body></html>
