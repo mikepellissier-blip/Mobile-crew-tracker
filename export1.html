@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Job Export</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.118.0"></script>
+<style>
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;margin:0;background:#f4f5f2;color:#1d2320}
+header{padding:16px;background:#1f6b45;color:#fff}header h1{margin:0;font-size:20px}header p{margin:2px 0 0;opacity:.85;font-size:13px}
+main{padding:16px;max-width:640px;margin:0 auto}
+button{display:block;width:100%;padding:14px;margin:10px 0;border:0;border-radius:10px;font-size:16px;font-weight:600;background:#1f6b45;color:#fff}
+button.ghost{background:#fff;color:#1f6b45;border:1px solid #1f6b45}
+#msg{font-size:15px;margin:8px 0}.sub{color:#6b736e;font-size:13px}
+table{border-collapse:collapse;width:100%;font-size:12px;margin-top:12px;background:#fff}td,th{border:1px solid #dde1dc;padding:4px;text-align:left}
+</style></head><body>
+<header><h1>Job Export</h1><p>LeafGuard Mobile · read-only · nothing here changes the tracker</p></header>
+<main>
+<div id="msg">Loading jobs…</div>
+<button id="share" disabled>Save / Share file</button>
+<button id="copy" class="ghost" disabled>Copy as text</button>
+<p class="sub">Includes jobs from the current log and any "Start Fresh" archives. Value is the discounted total as entered.</p>
+<div id="prev"></div>
+</main>
+<script>
+const SUPABASE_URL = "https://nixyuazdwhyjwrbjivdp.supabase.co";
+const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5peHl1YXpkd2h5andyYmppdmRwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg3OTc0ODEsImV4cCI6MjEwNDM3MzQ4MX0.xOCe6qG37rTTQ7SaQra0BtF4Gbm_qbQMufUfqFBLEgs";
+const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+const $=id=>document.getElementById(id);
+const arr=v=>Array.isArray(v)?v:(v?String(v).split(' & '):[]);
+const q=v=>{ v=(v==null?'':String(v)); return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v; };
+let CSV='', NAME='crew_jobs_'+new Date().toISOString().slice(0,10)+'.csv';
+(async()=>{
+  try{
+    const a=await db.from('settings').select('key,value').eq('key','rot2_log');
+    const b=await db.from('settings').select('key,value').like('key','rot2_archive_%');
+    if(a.error) throw a.error;
+    const parse=v=>{ try{ return typeof v==='string'?JSON.parse(v):v; }catch(e){ return null; } };
+    const seen=new Set(), jobs=[];
+    const add=(list,src)=>(list||[]).forEach(l=>{ if(!l||l.type!=='job') return; const k=String(l.id); if(seen.has(k)) return; seen.add(k); jobs.push({l,src}); });
+    ((b.data)||[]).forEach(r=>{ const x=parse(r.value); add(x&&x.log,'archive'); });
+    (a.data||[]).forEach(r=>add(parse(r.value),'current'));
+    jobs.sort((x,y)=>String(x.l.installDate||x.l.date||'').localeCompare(String(y.l.installDate||y.l.date||'')));
+    const H=['Job ID','Install Date','Closed Date','Customer','City','Discounted Total','Gutter ft','DS ft','Lead 1','Lead 2','Helper 1','Helper 2','Days','Source'];
+    const rows=jobs.map(({l,src})=>{ const L=arr(l.leads||l.lead), Hh=arr(l.helpers||l.helper);
+      return [l.jobNo||'',l.installDate||'',l.date||'',l.customer||'',l.city||'',l.value??'',l.gutterFt??'',l.dsFt??'',L[0]||'',L[1]||'',Hh[0]||'',Hh[1]||'',l.days||'',src]; });
+    CSV=[H,...rows].map(r=>r.map(q).join(',')).join('\n');
+    $('msg').textContent=rows.length+' jobs ready.';
+    $('share').disabled=false; $('copy').disabled=false;
+    $('prev').innerHTML='<table><tr>'+['Date','Customer','$','Crew'].map(h=>'<th>'+h+'</th>').join('')+'</tr>'+rows.map(r=>'<tr><td>'+(r[1]||r[2])+'</td><td>'+r[3]+'</td><td>'+r[5]+'</td><td>'+[r[8],r[9],r[10],r[11]].filter(Boolean).join(', ')+'</td></tr>').join('')+'</table>';
+  }catch(e){ $('msg').textContent='Could not load: '+(e.message||e); }
+})();
+$('share').onclick=async()=>{
+  const file=new File([CSV],NAME,{type:'text/csv'});
+  if(navigator.canShare && navigator.canShare({files:[file]})){ try{ await navigator.share({files:[file],title:NAME}); return; }catch(e){ if(e.name==='AbortError') return; } }
+  const a=document.createElement('a'); a.href=URL.createObjectURL(file); a.download=NAME; document.body.appendChild(a); a.click(); a.remove();
+};
+$('copy').onclick=async()=>{ try{ await navigator.clipboard.writeText(CSV); $('msg').textContent='Copied — paste it into our chat.'; }catch(e){ $('msg').textContent='Copy failed — use Save / Share.'; } };
+</script></body></html>
